@@ -29,6 +29,11 @@ struct PCB
     pid_t pid; // process id of this child
     int startSeconds; // time when it was forked
     int startNano; // time when it was forked
+    int serviceTimeSeconds; //total seconds to run
+    int serviceTimeNano; //total nanoseconds to run
+    int eventWaitSec; //when does event happen
+    int eventWaitNano; //when does event happen
+    int blocked; //is process waiting on event
 };
 
 PCB pcb_table[MAX_PROCESSES];
