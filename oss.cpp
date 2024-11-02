@@ -209,7 +209,7 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
     return sec1 > sec2 || (sec1 == sec2 && nano1 >= nano2);
 }
 
-void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
+/*void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
 {
     //schedule process
     int selected_index = -1;
@@ -254,7 +254,7 @@ void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
             }
         }
     }
-}
+}*/
 
 int main(int argc, char* argv[])
 {
@@ -348,7 +348,6 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-
     int launchedChildren = 0;
     int activeChildren = 0;
     pid_t lastChildMessaged = -1;
@@ -409,8 +408,9 @@ int main(int argc, char* argv[])
             std::cout << "Last child messaged: " << lastChildMessaged << std::endl;
             std::cout << "Next child to rcv msg from: " << nextChild << std::endl;
 
+            long lastChildLong = static_cast<long>(lastChildMessaged);
             Message rcvMsg;
-            if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), lastChildMessaged, 0) != -1)
+            if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), lastChildLong, 0) != -1)
             {
                 std::string logMessage = "Message received from child " + std::to_string(rcvMsg.pid) + " at time " +
                     std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
