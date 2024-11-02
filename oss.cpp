@@ -104,7 +104,7 @@ void output_to_log(const std::string &message)
     }
     else
     {
-        std::cerr << "Error: unable to open file." << std::endl;
+        std::cerr << "OSS: Error: unable to open file." << std::endl;
     }
 }
 
@@ -135,10 +135,12 @@ void print_process_table(PCB pcb_table[], Clock* shared_clock)
 
 void remove_from_PCB(pid_t dead_pid)
 {
+    std::cout << "PID to delete: " << dead_pid << std::endl;
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
         if (pcb_table[i].pid == dead_pid)
         {
+            std::cout << "Deleting pid: " << pcb_table[i].pid << std::endl;
             pcb_table[i].occupied = 0;
             pcb_table[i].pid = 0;
             pcb_table[i].startSeconds = 0;
@@ -320,21 +322,21 @@ int main(int argc, char* argv[])
         }
         if (numChildren > 20 || numSim > 20 || timeLimSec >= 60 || intervalMs >= 60000)
         {
-            std::cerr << "Please choose a reasonable number. Max time: 60." << std::endl;
+            std::cerr << "Please choose a reasonable number. Max time: 60 s." << std::endl;
             return 1;
         }
 
     int shmid = shmget(SH_KEY, sizeof(Clock), IPC_CREAT | PERMS);
     if (shmid == -1)
     {
-        std::cerr << "Error: Shared memory get failed" << std::endl;
+        std::cerr << "OSS: Error: Shared memory get failed" << std::endl;
         return 1;
     }
 
     Clock *shared_clock = static_cast<Clock*>(shmat(shmid, nullptr, 0));
     if (shared_clock == (void*)-1)
     {
-        std::cerr << "Error: shmat" << std::endl;
+        std::cerr << "OSS: Error: shmat" << std::endl;
         return 1;
     }
 
@@ -344,7 +346,7 @@ int main(int argc, char* argv[])
     int msgid = msgget(MSG_KEY, IPC_CREAT | PERMS);
     if (msgid == -1)
     {
-        std::cerr << "Error: msgget failed" << std::endl;
+        std::cerr << "OSS: Error: msgget failed" << std::endl;
         return 1;
     }
 
@@ -391,7 +393,7 @@ int main(int argc, char* argv[])
             //send message of type nextChild pid for child to receive, visible with ipcs
             if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) == -1)
             {
-                std::cerr << "Error: msgsnd failed" << std::endl;
+                std::cerr << "OSS: Error: msgsnd failed" << std::endl;
                 return 1;
             }
             else
@@ -447,7 +449,7 @@ int main(int argc, char* argv[])
                     if (new_pid < 0)
                     {
                         //fork failed
-                        std::cerr << "Error: fork issue." << std::endl;
+                        std::cerr << "OSS: Error: fork issue." << std::endl;
                         exit(1);
                     }
                     else if (new_pid == 0)
@@ -460,7 +462,7 @@ int main(int argc, char* argv[])
                         std::string randomNanoStr = std::to_string(randomNano);
 
                         execl("./worker", "worker", randomSecStr.c_str(), randomNanoStr.c_str(), nullptr);
-                        std::cerr << "Error: execl failed" << std::endl;
+                        std::cerr << "OSS: Error: execl failed" << std::endl;
                         exit(1);
                     }
                     else
