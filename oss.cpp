@@ -405,12 +405,9 @@ int main(int argc, char* argv[])
             }
 
             lastChildMessaged = nextChild;  //update last messaged child
-            std::cout << "Last child messaged: " << lastChildMessaged << std::endl;
-            std::cout << "Next child to rcv msg from: " << nextChild << std::endl;
 
-            long lastChildLong = static_cast<long>(lastChildMessaged);
             Message rcvMsg;
-            if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), lastChildLong, 0) != -1)
+            if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), getpid(), 0) != -1)
             {
                 std::string logMessage = "Message received from child " + std::to_string(rcvMsg.pid) + " at time " +
                     std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
