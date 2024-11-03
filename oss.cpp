@@ -96,16 +96,37 @@ void increment_clock(Clock *shared_clock, int activeChildren)
 
 void output_to_log(const std::string &message)
 {
-    std::ofstream logFileStream(logFile, std::ios::app);
-    if (logFileStream)
+    static int totalLines = 0;
+    const int MAX_LINES = 1000;
+    static int fileIndex = 1;
+
+    std::ofstream logFileStream;
+
+    //check if total lines exceed 1000
+    while(totalLines >= MAX_LINES)
     {
-        logFileStream << message << std::endl;
-        std::cout << message << std::endl;
+        totalLines = 0;
+        //if more than 1000, add 1 to fileIndex
+        fileIndex++;
     }
-    else
+
+    //create file name with index incrementing if exceeding 1000 lines per file
+    std::string fileName = logFile + std::to_string(fileIndex) + ".txt";
+
+    //open file
+    logFileStream.open(fileName, std::ios::app);
+
+    //check if file is open
+    if (!logFileStream)
     {
-        std::cerr << "OSS: Error: unable to open file." << std::endl;
+        std::cerr << "Error: Could not open file." << std::endl;
+        return;
     }
+
+    logFileStream << message << std::endl; //write message to file
+    totalLines++; //increment line count
+
+    logFileStream.close(); //close file
 }
 
 void print_process_table(PCB pcb_table[], Clock* shared_clock)
@@ -211,7 +232,7 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
     return sec1 > sec2 || (sec1 == sec2 && nano1 >= nano2);
 }
 
-/*void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
+void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
 {
     //schedule process
     int selected_index = -1;
@@ -219,7 +240,7 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
 
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
-        if (pcb_table[i].occupied == 0)
+        if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 0)
         {
             double total_time = (shared_clock -> seconds - pcb_table[i].startSeconds) + (shared_clock -> nanoseconds - pcb_table[i].startNano)/BILLION;
             double service_time = (pcb_table[i].serviceTimeSeconds) + (pcb_table[i].serviceTimeNano)/BILLION;
@@ -256,7 +277,7 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
             }
         }
     }
-}*/
+}
 
 int main(int argc, char* argv[])
 {
@@ -301,12 +322,9 @@ int main(int argc, char* argv[])
                 case 't':
                     timeLimSec = atoi(optarg);
                     break;
-                case 'i':
-                    intervalMs = atoi(optarg);
-                    break;
-		case 'f':
-		    logFile = optarg;
-		    break;
+		        case 'f':
+		            logFile = optarg;
+		            break;
                 default:
                     std::cerr << "Please choose an option!\n" ;
                     std::cout << "Example invocation: \n" ;
@@ -481,6 +499,14 @@ int main(int argc, char* argv[])
                         launchedChildren++;
                         break;
                     }
+                }
+                nextLaunchTimeSec = shared_clock->seconds;
+                nextLaunchTimeNs = shared_clock->nanoseconds + intervalMs * 1000000;
+
+                if (nextLaunchTimeNs >= BILLION)
+                {
+                    nextLaunchTimeNs -= BILLION;
+                    nextLaunchTimeSec++;
                 }
             }
         }

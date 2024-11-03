@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
     int shmid = shmget(SH_KEY, sizeof(Clock), PERMS); //<-----
     if (shmid == -1)
     {
-        std::cerr << "Worker: Error: Shared memory get failed" << std::endl;
+        std::cerr << "Worker " << getpid() <<": Error: Shared memory get failed" << std::endl;
         return 1;
     }
 
@@ -158,7 +158,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    shmctl (shmid, IPC_RMID, 0);
+    shmdt(shared_clock);
     //msgctl (msgid, IPC_RMID, 0);
 
     return 0;
