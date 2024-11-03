@@ -289,10 +289,9 @@ int main(int argc, char* argv[])
     int opt;
     int numChildren = 1;
     int numSim = 1;
-    int timeLimSec = 1;
-    int intervalMs = 100;
+    int timeDelayNano = 100;
 
-    while((opt = getopt(argc, argv, ":hn:s:t:i:f:")) != -1) //set optional args
+    while((opt = getopt(argc, argv, ":hn:s:t:f:")) != -1) //set optional args
         {
             switch(opt)
             {
@@ -303,14 +302,13 @@ int main(int argc, char* argv[])
                     std::cout << "-h: display help menu\n" ;
                     std::cout << "-n: set number of child processes\n" ;
                     std::cout << "-s: set number of simultaneous children\n" ;
-                    std::cout << "-t: set time limit for children in seconds\n" ;
-                    std::cout << "-i: set interval in ms between launching children\n" ;
-		    std::cout << "-f: choose file for oss output\n" ;
+                    std::cout << "-t: set time delay for children in nanoseconds\n" ;
+		            std::cout << "-f: choose file for oss output\n" ;
                     std::cout << "**********************\n" ;
                     std::cout << "Example invocation: \n" ;
-                    std::cout << "./oss -n 5 -s 3 -t 7 -i 100\n" ;
-                    std::cout << "Example will launch 5 child processes, with time limit between 1s and 7s,";
-                    std::cout << "\nwith a time delay between new children of 100 ms\n" ;
+                    std::cout << "./oss -n 5 -s 3 -t 1000 \n" ;
+                    std::cout << "Example will launch 5 child processes,";"
+                    std::cout << "\nwith a time delay between new children of 1000 ns\n" ;
                     std::cout << "\nand never allow more than 3 child processes to run simultaneously.\n" ;
                     return 0;
                 case 'n':
@@ -333,12 +331,12 @@ int main(int argc, char* argv[])
             }
         }
 
-        if (numChildren <= 0 || numSim <= 0 || timeLimSec <=0 || intervalMs <= 0)
+        if (numChildren <= 0 || numSim <= 0 || timeDelayNano < 0)
         {
             std::cerr << "Please choose a valid number greater than 0." << std::endl;
             return 1;
         }
-        if (numChildren > 20 || numSim > 20 || timeLimSec >= 60 || intervalMs >= 60000)
+        if (numChildren > 20 || numSim > 20 || timeDelayNano > 60)
         {
             std::cerr << "Please choose a reasonable number. Max time: 60 s." << std::endl;
             return 1;
@@ -370,7 +368,6 @@ int main(int argc, char* argv[])
 
     int launchedChildren = 0;
     int activeChildren = 0;
-    pid_t lastChildMessaged = -1;
 
     long long nextLaunchTimeSec = 0;
     long long nextLaunchTimeNs = 0;

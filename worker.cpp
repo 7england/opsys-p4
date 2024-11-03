@@ -8,6 +8,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/msg.h>
+#include <ctime>
 
 const int SH_KEY = 74821;
 const int MSG_KEY = 49174;
@@ -20,24 +21,54 @@ struct Clock
     int nanoseconds;
 };
 
-/* herein lied the issue. RIP bug that took 3 hours to find that
-was literally just me having msgtype as long and int in oss and
-worker respectively. why did i not check the message struct properly
-is a question that i wish i could ask my past self but alas
-strange things happen to the human brain off of 2 hours of sleep
-and 5 McDonalds coffees */
 struct Message
 {
     long msgtype; //type of msg
     pid_t pid; //pid of sender
-    int action; //0 for terminate 1 for run
+    int time; //time slice/used in ns; if negative, worker is terminating
 };
 
-int main(int argc, char *argv[])
+int simulateWork(int timeSlice)
 {
-    int maxSec = std::atoi(argv[1]);
-    int maxNsec = std::atoi(argv[2]);
+    //simulate work
+    //10% chance of terminating
+    int terminateChance = rand() % 100;
+    if (terminateChance < 10)
+    {
+        int usedTime = rand() % (timeSlice + 1); //use entire time slice
+        return -usedTime; //terminate
+    }
+    //90% chance of working
+    else
+    {
+        int blockChance = rand() % 100;
+        if (blockChance < 50) //50% chance of blocking
+        {
+            int r = rand() % 6; //r in range [0, 5]
+            int s = rand() % 1001; //s in range [0, 1000]
+            int blockTime = r * BILLION + s; //block time in ns
 
+            return blockTime;
+        }
+        else //50% chance of working
+        {
+            int p = rand() % 100; //p in range [1, 99]
+            if (p < timeSlice)
+            {
+                return p;
+            }
+            else
+            {
+                return timeSlice;
+            }
+        }
+    }
+    //if no work done
+    return -1;
+}
+
+int main()
+{
     //https://stackoverflow.com/questions/55833470/accessing-key-t-generated-by-ipc-private
     int shmid = shmget(SH_KEY, sizeof(Clock), PERMS); //<-----
     if (shmid == -1)
@@ -61,105 +92,47 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    int termSec = shared_clock -> seconds + maxSec;
-    int termNsec = shared_clock -> nanoseconds + maxNsec;
+    //seed random number generator
+    srand(static_cast<unsigned int>(getpid() + time(0)));
 
-    if (termNsec >= BILLION)
+    while(true)
     {
-        termSec += termNsec / BILLION;
-        termNsec = termNsec % BILLION;
+
+        //get message from oss
+        Message msg;
+
+        if(msgrcv(msgid, &msg, sizeof(Message) - sizeof(long), getpid(), 0) == -1)
+        {
+            std::cerr << "Worker " << getpid() << ": Error: msgrcv failed" << std::endl;
+            return 1;
+        }
+        //get timeslice from oss msg
+        int timeSlice = msg.time;
+
+        std::cout << "Worker " << getpid() << ": Received time slice " << timeSlice << " from OSS" << std::endl;
+        //simulate work
+        int workDone = simulateWork(timeSlice);
+
+        Message response;
+        response.msgtype = getppid();
+        response.pid = getpid();
+        response.time = workDone;
+
+        //send message to oss
+        if(msgsnd(msgid, &response, sizeof(Message) - sizeof(long), 0) == -1)
+        {
+            std::cerr << "Worker " << getpid() << ": Error: msgsnd failed" << std::endl;
+            return 1;
+        }
+
     }
 
-    std::cout << "\n\nWorker PID: " << getpid() << " PPID: " << getppid() <<
-    " SysClockS: " << shared_clock -> seconds <<  " SysClockNano: " << shared_clock -> nanoseconds <<
-    " TermTimeS: " << termSec << " TermTimeNano: " << termNsec <<
-    "\n Starting.......\n\n" << std::endl;
-
-    sleep(1);
-    //message struct to receive messages
-    Message rcvMsg;
-    int iterationCount = 0; //count of iterations
-
-    //do while loop from proj specs
-    do
+    //detach shared mem
+    if(shmdt(shared_clock) == -1)
     {
-        //get pid of worker
-        pid_t pid = getpid();
-
-        //receive message from oss with pid as msgtype
-        if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), pid, 0) == -1) //stuck on this line! <-----
-        {
-            std::cerr << "Worker " << pid << ": Error: msgrcv failed" << std::endl;
-            return 1;
-        }
-        else
-        {
-            std::cout << "Worker: " << getpid() << " received message from oss" << std::endl;
-        }
-
-        //increment iteration count
-        iterationCount++;
-
-        Message msg;
-        //always send a message back to the parent process after receiving a message
-        msg.msgtype = getppid(); //pid of receiver
-        msg.pid = getpid(); //pid of worker
-        msg.action = 1; //run
-
-        if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) == -1)
-        {
-            std::cerr << "Worker: Error: msgsnd failed" << std::endl;
-            return 1;
-        }
-        else
-        {
-            std::cout << "Worker: " << getpid() << " sent message back to oss" << std::endl;
-        }
-
-        //check if we're out of time (reversed from other project to break if opp true
-        if (shared_clock -> seconds > termSec ||
-        (shared_clock -> seconds >= termSec && shared_clock -> nanoseconds >= termNsec))
-        {
-            //print info again
-            std::cout << "\n\nWorker PID: " << getpid() << " PPID: " << getppid() <<
-            " SysClockS: " << shared_clock -> seconds <<  " SysClockNano: " << shared_clock -> nanoseconds <<
-            " TermTimeS: " << termSec << " TermTimeNano: " << termNsec << std::endl;
-
-            //send message back to oss
-            msg.msgtype = getppid();
-            msg.pid = getpid();
-            msg.action = 0; //terminate
-            std::cout << "Message pid of " << msg.pid << " and action is " << msg.action << "\n\n" << std::endl;
-            if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) ==-1)
-            {
-                std::cerr << "Worker: Error: msgsnd failed" << std::endl;
-                return 1;
-            }
-            else
-            {
-                std::cout << "Worker " << msg.pid << ": Terminating after sending message back to oss after " << iterationCount << " iteration(s) has/have passed" << std::endl;
-            }
-
-            //determine if it is time to terminate
-            break;
-        }
-
-        std::cout << "\n\nWorker PID: " << getpid() << " PPID: " << getppid() <<
-        " SysClockS: " << shared_clock -> seconds <<  " SysClockNano: " << shared_clock -> nanoseconds <<
-        " TermTimeS: " << termSec << " TermTimeNano: " << termNsec << std::endl;
-        std::cout << "--" << iterationCount << " iteration(s) has/have passed since starting" << std::endl;
-
-    } while (true);
-
-    //clean up
-    if (shmdt(shared_clock) == -1)
-    {
-        std::cerr << "Worker: error: shmdt" << std::endl;
+        std::cerr << "Worker " << getpid() << ": Error: shmdt failed" << std::endl;
         return 1;
     }
-
-    shmdt(shared_clock);
-    //msgctl (msgid, IPC_RMID, 0);
 
     return 0;
 }
