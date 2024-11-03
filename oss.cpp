@@ -49,7 +49,7 @@ struct Message
 {
     long msgtype; //type of msg
     pid_t pid; //pid of sender
-    int action; //0 for terminate 1 for run
+    int timeSlice; //time slice for process
 };
 
 void signal_handler(int sig)
@@ -75,22 +75,19 @@ void signal_handler(int sig)
     exit(1);
 }
 
-void increment_clock(Clock *shared_clock, int activeChildren)
+void increment_clock(Clock *shared_clock, int timeUsedByOSSOrChild)
 {
-    if (activeChildren > 0)
-    {
-        shared_clock -> nanoseconds += (250000000 / activeChildren);
-    }
-    else
-    {
-        //do not increment
-    }
+    shared_clock -> nanoseconds += timeUsedByOSSOrChild;
 
     //increment seconds if nanoseconds = second
     if (shared_clock -> nanoseconds >= BILLION)
     {
         shared_clock -> nanoseconds -= BILLION;
         shared_clock -> seconds++;
+    }
+    else
+    {
+        //do not increment
     }
 }
 
@@ -176,43 +173,6 @@ void remove_from_PCB(pid_t dead_pid)
     }
 }
 
-pid_t calculateNextChildToSendAMessageTo(pid_t lastChildMessaged)
-{
-    //find the index of the last child messaged
-    int lastChildIndex = -1;
-    for (int i = 0; i < MAX_PROCESSES; i++)
-    {
-        if (pcb_table[i].occupied && pcb_table[i].pid == lastChildMessaged)
-        {
-            lastChildIndex = i;
-            break;
-        }
-    }
-
-    //start searching from the next index
-    for (int i = lastChildIndex + 1; i < MAX_PROCESSES; i++)
-    {
-        if (pcb_table[i].occupied)
-        {
-            std::cout << "Returning pid: " << pcb_table[i].pid << std::endl;
-            return pcb_table[i].pid;
-        }
-    }
-
-    //no child was found, start searching from the beginning
-    for (int i = 0; i <= lastChildIndex; i++)
-    {
-        if (pcb_table[i].occupied)
-        {
-            std::cout << "Returning pid: " << pcb_table[i].pid << std::endl;
-            return pcb_table[i].pid;
-        }
-    }
-
-    //no child is found, return -1
-    return -1;
-}
-
 bool stillChildrenToLaunch(int launchedChildren, int numChildren)
 {
     /*std::cout << "Launched children: " << launchedChildren << std::endl;
@@ -234,48 +194,30 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
 
 void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
 {
-    //schedule process
-    int selected_index = -1;
-    double min_ratio = 1.0;
-
+    //find the highest priority process
+    int highestPriority = -1;
+    int highestPriorityIndex = -1;
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
         if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 0)
         {
-            double total_time = (shared_clock -> seconds - pcb_table[i].startSeconds) + (shared_clock -> nanoseconds - pcb_table[i].startNano)/BILLION;
-            double service_time = (pcb_table[i].serviceTimeSeconds) + (pcb_table[i].serviceTimeNano)/BILLION;
-            double ratio = (total_time > 0) ? service_time/total_time : 0; //prevent divide by 0
-
-            if (ratio < 1.0)
+            int priority = pcb_table[i].serviceTimeSeconds * BILLION + pcb_table[i].serviceTimeNano;
+            if (priority > highestPriority)
             {
-                min_ratio = ratio;
-                selected_index = i;
-                break;
+                highestPriority = priority;
+                highestPriorityIndex = i;
             }
         }
+    }
 
-        if (selected_index != -1)
-        {
-            //if no process is selected, select the first one
-            Message msg;
-            msg.msgtype = pcb_table[selected_index].pid;
-            msg.pid = getpid();
-            msg.action = 1;
-
-            increment_clock(shared_clock, 1);
-
-            if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) == -1)
-            {
-                std::cerr << "Error: msgsnd failed" << std::endl;
-                return;
-            }
-            else
-            {
-                std::string logMessage = "Message sent to child " + std::to_string(pcb_table[selected_index].pid) + " at time " +
-                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
-                output_to_log(logMessage);
-            }
-        }
+    if (highestPriorityIndex != -1)
+    {
+        //send message to process
+        Message msg;
+        msg.msgtype = pcb_table[highestPriorityIndex].pid;
+        msg.pid = pcb_table[highestPriorityIndex].pid;
+        msg.timeSlice = 5000;
+        msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0);
     }
 }
 
@@ -307,7 +249,7 @@ int main(int argc, char* argv[])
                     std::cout << "**********************\n" ;
                     std::cout << "Example invocation: \n" ;
                     std::cout << "./oss -n 5 -s 3 -t 1000 \n" ;
-                    std::cout << "Example will launch 5 child processes,";"
+                    std::cout << "Example will launch 5 child processes,";
                     std::cout << "\nwith a time delay between new children of 1000 ns\n" ;
                     std::cout << "\nand never allow more than 3 child processes to run simultaneously.\n" ;
                     return 0;
@@ -318,7 +260,7 @@ int main(int argc, char* argv[])
                     numSim = atoi(optarg); //assign arg value to numSim
                     break;
                 case 't':
-                    timeLimSec = atoi(optarg);
+                    timeDelayNano = atoi(optarg);
                     break;
 		        case 'f':
 		            logFile = optarg;
@@ -326,7 +268,7 @@ int main(int argc, char* argv[])
                 default:
                     std::cerr << "Please choose an option!\n" ;
                     std::cout << "Example invocation: \n" ;
-                    std::cout << "./oss -n 5 -s 3 -t 7 -i 100\n" ;
+                    std::cout << "./oss -n 5 -s 3 -t 100 \n" ;
                     return 1;
             }
         }
@@ -336,7 +278,7 @@ int main(int argc, char* argv[])
             std::cerr << "Please choose a valid number greater than 0." << std::endl;
             return 1;
         }
-        if (numChildren > 20 || numSim > 20 || timeDelayNano > 60)
+        if (numChildren > 20 || numSim > 20 || timeDelayNano > 6000000)
         {
             std::cerr << "Please choose a reasonable number. Max time: 60 s." << std::endl;
             return 1;
@@ -366,148 +308,144 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    /*
+    while (stillChildrenToLaunch or childrenInSystem) {
+    determine if we should launch a child
+    check if a blocked process should be changed to ready
+    calculate priorities of ready processes
+    schedule a process by sending it a message
+    receive a message back and update appropriate structures
+    Every half a second, output the process table to the screen and the log file
+    }
+    */
+
     int launchedChildren = 0;
     int activeChildren = 0;
 
-    long long nextLaunchTimeSec = 0;
-    long long nextLaunchTimeNs = 0;
-    long long nextPrintTimeSec = 0;
-    long long nextPrintTimeNs = 500000;
+    long long nextChildLaunchSec = 0;
+    long long nextChildLaunchNano = 0;
 
-    while (stillChildrenToLaunch(launchedChildren, numChildren) || stillChildrenRunning(activeChildren))
+    while(stillChildrenToLaunch(launchedChildren, numChildren) || stillChildrenRunning(activeChildren))
     {
-        increment_clock(shared_clock, activeChildren);
-
-        //if 50 ms passed print pcb
-        if (timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextPrintTimeSec, nextPrintTimeNs))
+        std::cout << "Looping: launchedChildren: " << launchedChildren << " activeChildren: " << activeChildren << std::endl;
+        std::cout << "Time: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
+        //determine if we should launch a new child. if no active children, launch immediately.
+        if (activeChildren == 0 || timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextChildLaunchSec, nextChildLaunchNano))
         {
-            print_process_table(pcb_table, shared_clock);
-            nextPrintTimeSec = shared_clock->seconds;
-            nextPrintTimeNs = shared_clock->nanoseconds + 500000;
-
-            //if nanoseconds > 1 billion, increment seconds
-            if (nextPrintTimeNs >= BILLION)
+            //launch a new child
+            pid_t child_pid = fork();
+            if (child_pid == -1)
             {
-                nextPrintTimeNs -= BILLION;
-                nextPrintTimeSec++;
+                std::cerr << "Error: fork failed" << std::endl;
+                return 1;
             }
-        }
-
-        //check next child to send a message to using func
-        pid_t nextChild = calculateNextChildToSendAMessageTo(lastChildMessaged);
-        //std::cout << "Next child to send a message to: " << nextChild << std::endl;
-
-        if (nextChild != -1)
-        {
-            //send msg to child to run
-            Message msg;
-            msg.msgtype = nextChild; //child pid
-            msg.pid = getpid(); //parent pid
-            msg.action = 1; //running, but doesn't really matter
-
-            //send message of type nextChild pid for child to receive, visible with ipcs
-            if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) == -1)
+            else if (child_pid == 0)
             {
-                std::cerr << "OSS: Error: msgsnd failed" << std::endl;
+                //child process
+                execl("./worker", "worker", nullptr);
+                std::cerr << "Error: execl failed" << std::endl;
                 return 1;
             }
             else
             {
-                //save msg in log
-                std::string logMessage = "Message sent to child " + std::to_string(nextChild) + " at time " +
-                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
-                std::cout << "Message type " << msg.msgtype << std::endl;
-                output_to_log(logMessage);
-                //std::cout << "Sent" << std::endl;
-            }
+                //parent process
+                launchedChildren++;
+                activeChildren++;
+                std::cout << "Child launched: " << child_pid << std::endl;
 
-            lastChildMessaged = nextChild;  //update last messaged child
-
-            Message rcvMsg;
-            if (msgrcv(msgid, &rcvMsg, sizeof(rcvMsg) - sizeof(long), getpid(), 0) != -1)
-            {
-                std::string logMessage = "Message received from child " + std::to_string(rcvMsg.pid) + " at time " +
-                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
-                output_to_log(logMessage);
-                std::cout << "Last child messaged: " << lastChildMessaged << std::endl;
-
-                std::cout << "Msg Action: " << rcvMsg.action << std::endl;
-                //check if child will terminate
-                if (rcvMsg.action == 0)
+                //find an empty spot in the PCB table
+                for (int i = 0; i < MAX_PROCESSES; i++)
                 {
-                    std::string logMessage = "Child " + std::to_string(rcvMsg.pid) + " terminated at time " +
-                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds);
-                    output_to_log(logMessage);
-
-                    waitpid(rcvMsg.pid, nullptr, 0);
-                    remove_from_PCB(rcvMsg.pid);
-                    activeChildren--;
-                }
-            }
-            else
-            {
-                std::cerr << "OSS: Error: msgrcv failed" << std::endl;
-                return 1;
-            }
-        }
-
-        if ((activeChildren < numSim && launchedChildren < numChildren) &&
-            ((shared_clock->seconds > nextLaunchTimeSec) ||
-            (shared_clock->seconds == nextLaunchTimeSec && shared_clock->nanoseconds >= nextLaunchTimeNs)))
-        {
-            for (int i = 0; i < numSim; i++)
-            {
-                if (!pcb_table[i].occupied)
-                {
-                    pid_t new_pid = fork();
-
-                    if (new_pid < 0)
+                    if (pcb_table[i].occupied == 0)
                     {
-                        //fork failed
-                        std::cerr << "OSS: Error: fork issue." << std::endl;
-                        exit(1);
-                    }
-                    else if (new_pid == 0)
-                    {
-                        //child process
-                        int randomSec = rand() % timeLimSec + 1;
-                        int randomNano = rand() % BILLION;
-
-                        std::string randomSecStr = std::to_string(randomSec);
-                        std::string randomNanoStr = std::to_string(randomNano);
-
-                        execl("./worker", "worker", randomSecStr.c_str(), randomNanoStr.c_str(), nullptr);
-                        std::cerr << "OSS: Error: execl failed" << std::endl;
-                        exit(1);
-                    }
-                    else
-                    {
-                        //parent process
                         pcb_table[i].occupied = 1;
-                        pcb_table[i].pid = new_pid;
-                        pcb_table[i].startSeconds = shared_clock -> seconds;
-                        pcb_table[i].startNano = shared_clock -> nanoseconds;
+                        pcb_table[i].pid = child_pid;
+                        pcb_table[i].startSeconds = shared_clock->seconds;
+                        pcb_table[i].startNano = shared_clock->nanoseconds;
                         pcb_table[i].serviceTimeSeconds = 0;
                         pcb_table[i].serviceTimeNano = 0;
                         pcb_table[i].eventWaitSec = 0;
                         pcb_table[i].eventWaitNano = 0;
                         pcb_table[i].blocked = 0;
-                        activeChildren++;
-                        launchedChildren++;
+
+                        std::string logMessage = "Child " + std::to_string(child_pid) + " is starting at time " +
+                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                        output_to_log(logMessage);
+                        //increment clock
+                        increment_clock(shared_clock, 1000);
                         break;
                     }
                 }
-                nextLaunchTimeSec = shared_clock->seconds;
-                nextLaunchTimeNs = shared_clock->nanoseconds + intervalMs * 1000000;
 
-                if (nextLaunchTimeNs >= BILLION)
+                //calculate next child launch time
+                nextChildLaunchSec = shared_clock->seconds;
+                nextChildLaunchNano = shared_clock->nanoseconds + timeDelayNano;
+                if (nextChildLaunchNano >= BILLION)
                 {
-                    nextLaunchTimeNs -= BILLION;
-                    nextLaunchTimeSec++;
+                    nextChildLaunchSec++;
+                    nextChildLaunchNano -= BILLION;
                 }
+                std::cout << "Next child launch time: " << nextChildLaunchSec << "." << nextChildLaunchNano << std::endl;
             }
         }
+
+
+        //schedule process
+        schedule_process(shared_clock, msgid, pcb_table);
+
+        //receive message back and update appropriate structures
+        Message msg;
+        while(msgrcv(msgid, &msg, sizeof(msg) - sizeof(long), getpid(), 0) != -1)
+        {
+            std::cout << "Received message from child: " << msg.pid << std::endl;
+            //find the child in the PCB table
+            for (int i = 0; i < MAX_PROCESSES; i++)
+            {
+                if (pcb_table[i].pid == msg.pid)
+                {
+                    if (msg.timeSlice < 0)
+                    {
+                        //calculate time of worker
+                        int timeTaken = 0 - msg.timeSlice;
+                        //terminate process
+                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is terminating at time " +
+                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                        remove_from_PCB(msg.pid);
+                        increment_clock(shared_clock, timeTaken);
+                        activeChildren--;
+                    }
+                    else if (msg.timeSlice >= 0 && msg.timeSlice < 5000)
+                    {
+                        //block process
+                        pcb_table[i].blocked = 1;
+                        pcb_table[i].eventWaitSec = shared_clock->seconds;
+                        pcb_table[i].eventWaitNano = shared_clock->nanoseconds + msg.timeSlice;
+                        if (pcb_table[i].eventWaitNano >= BILLION)
+                        {
+                            pcb_table[i].eventWaitSec++;
+                            pcb_table[i].eventWaitNano -= BILLION;
+                        }
+                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is blocking at time " +
+                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                    }
+                    else if (msg.timeSlice == 5000)
+                    {
+                        //calculate time of worker
+                        int timeTaken = msg.timeSlice;
+                        //increment clock
+                        increment_clock(shared_clock, timeTaken);
+                        //update PCB table
+                        pcb_table[i].serviceTimeSeconds += timeTaken;
+                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is running at time " +
+                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                    }
+                    break;
+                }
+            }
+
+        }
     }
+
     //clean up
     shmdt(shared_clock);
     shmctl(shmid, IPC_RMID, nullptr);

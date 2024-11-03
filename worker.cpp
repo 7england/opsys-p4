@@ -69,6 +69,7 @@ int simulateWork(int timeSlice)
 
 int main()
 {
+    std::cout << "Worker " << getpid() << ": Starting" << std::endl;
     //https://stackoverflow.com/questions/55833470/accessing-key-t-generated-by-ipc-private
     int shmid = shmget(SH_KEY, sizeof(Clock), PERMS); //<-----
     if (shmid == -1)
