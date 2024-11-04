@@ -273,7 +273,7 @@ int main(int argc, char* argv[])
                 default:
                     std::cerr << "Please choose an option!\n" ;
                     std::cout << "Example invocation: \n" ;
-                    std::cout << "./oss -n 5 -s 3 -t 100 \n" ;
+                    std::cout << "./oss -n 5 -s 3 -t 1000 \n" ;
                     return 1;
             }
         }
@@ -396,6 +396,19 @@ int main(int argc, char* argv[])
 
 
         //schedule process
+        //loop through pcb checking the blocked processes. if blocked, check if it is time to unblock
+        for (int i = 0; i < MAX_PROCESSES; i++)
+        {
+            if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 1)
+            {
+                if (timePassed(shared_clock->seconds, shared_clock->nanoseconds, pcb_table[i].eventWaitSec, pcb_table[i].eventWaitNano))
+                {
+                    pcb_table[i].blocked = 0;
+                    pcb_table[i].eventWaitSec = 0;
+                    pcb_table[i].eventWaitNano = 0;
+                }
+            }
+        }
         schedule_process(shared_clock, msgid, pcb_table);
 
         //receive message back and update appropriate structures
@@ -411,7 +424,7 @@ int main(int argc, char* argv[])
             {
                 //child is done
                 std::string logMessage = "Child " + std::to_string(msg.pid) + " is terminating at time " +
-                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                    std::to_string(shared_clock->seconds) + " s and " + std::to_string(shared_clock->nanoseconds) + "ns.";
                 output_to_log(logMessage);
 
                 activeChildren--;
@@ -424,8 +437,10 @@ int main(int argc, char* argv[])
                 //check if child is blocked if not equal to 5000 ns
                 for (int i = 0; i < MAX_PROCESSES; i++)
                 {
+                    std::cout << "Made it here 1" << std::endl;
                     if (pcb_table[i].pid == msg.pid)
                     {
+                        std::cout << "Made it here 2" << std::endl;
                         pcb_table[i].blocked = 1;
                         pcb_table[i].eventWaitSec = shared_clock->seconds;
                         pcb_table[i].eventWaitNano = shared_clock->nanoseconds + msg.timeSlice;
@@ -433,11 +448,15 @@ int main(int argc, char* argv[])
                         {
                             pcb_table[i].eventWaitSec++;
                             pcb_table[i].eventWaitNano -= BILLION;
+                            std::cout << "Made it here 3" << std::endl;
                         }
+                        std::cout << "Made it here 4" << std::endl;
                         break;
                     }
                 }
             }
+            std::cout << "Made it here 5" << std::endl;
+            break;
         }
     }
 
