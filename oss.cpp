@@ -151,6 +151,7 @@ void print_process_table(PCB pcb_table[], Clock* shared_clock)
     logOutput += "------------------------------------------------------------------------------------------------------------------------------------\n";
 
     output_to_log(logOutput);
+    std::cout << logOutput << std::endl;
 }
 
 void remove_from_PCB(pid_t dead_pid)
@@ -208,23 +209,24 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
 
 long double calculate_priority(PCB pcb, Clock* shared_clock)
 {
-    // Calculate total system time
-    long long totalSystemTime = shared_clock->seconds * BILLION + shared_clock->nanoseconds;
-    std::string logOutput = "Total system time: " + std::to_string(totalSystemTime);
-    output_to_log(logOutput);
+    //calculate total system time
+    long double totalSystemTime = shared_clock->seconds * BILLION + shared_clock->nanoseconds;
     if (totalSystemTime == 0)
     {
         return 0;
     }
 
-    // Calculate total service time
-    long long totalServiceTime = pcb.serviceTimeSeconds * BILLION + pcb.serviceTimeNano;
+    //calculate total service time
+    long double totalServiceTime = pcb.serviceTimeSeconds * BILLION + pcb.serviceTimeNano;
+    std::string serviceTimeMsg = "Service time of child " + std::to_string(pcb.pid) + " is " +
+        std::to_string(pcb.serviceTimeSeconds) + " s and " + std::to_string(pcb.serviceTimeNano) + " ns.";
+    output_to_log(serviceTimeMsg);
     if (totalServiceTime == 0)
     {
         return 0;
     }
 
-    // Calculate priority
+    //calculate priority
     long double priority = static_cast<long double>(totalServiceTime) / totalSystemTime;
     return priority;
 }
@@ -246,13 +248,15 @@ void print_ready_queue(Clock* shared_clock)
 
     logOutput += "-----------------\n";
     output_to_log(logOutput);
+
+    std::cout << logOutput << std::endl;
 }
 
 bool schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
 {
-    std::cout << "Scheduling process..." << std::endl;
+    //std::cout << "Scheduling process..." << std::endl;
     //find the lowest priority process; closer to 0 should be scheduled first
-    long double lowestPriority = 1;
+    long double lowestPriority = 1.0;
     PCB lowestPriorityProcess;
 
     if (!readyQueue.empty())
@@ -260,10 +264,10 @@ bool schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
         std::queue<PCB> tempQueue;
         while (!readyQueue.empty())
         {
-            std::cout << "Checking ready queue..." << std::endl;
             PCB temp = readyQueue.front(); //get front of queue
             readyQueue.pop(); //pop front of queue
             long double priority = calculate_priority(temp, shared_clock);
+            //if priority is closer to 0, set as lowest priority
             if (priority < lowestPriority)
             {
                 lowestPriority = priority;
@@ -284,21 +288,25 @@ bool schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
         Message msg;
         msg.msgtype = lowestPriorityProcess.pid;
         msg.pid = getpid();
-        std::cout << "Sending message to pid: " << lowestPriorityProcess.pid << std::endl;
         msg.timeSlice = 5000; //time slice of 5000 ns
         if (msgsnd(msgid, &msg, sizeof(msg) - sizeof(long), 0) == -1)
         {
             std::cerr << "Error: msgsnd failed" << std::endl;
             return false;
         }
+        else
+        {
+            std::string logOutput = "Sent message to child " + std::to_string(lowestPriorityProcess.pid) + " with priority " +
+                std::to_string(lowestPriority) + " at time " + std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+            output_to_log(logOutput);
+            return true;
+        }
     }
     else
     {
-        std::cout << "No processes in ready queue." << std::endl;
-        //no processes in ready queue, return
         return false;
     }
-    std::cout << "Finished scheduling process." << std::endl;
+
     return true;
 }
 
@@ -317,6 +325,7 @@ void check_blocked_queue(Clock *shared_clock, PCB pcb_table[])
             std::string logOutput = "Child " + std::to_string(temp.pid) + " is unblocked at time " +
                 std::to_string(shared_clock->seconds) + " s " + std::to_string(shared_clock->nanoseconds) + " ns.";
             output_to_log(logOutput);
+            increment_clock(shared_clock, 100000); //increment clock by 100000 ns to simulate unblocking taking longer
         }
         else
         {
@@ -476,13 +485,13 @@ int main(int argc, char* argv[])
 
     while(stillChildrenToLaunch(launchedChildren, numChildren) || stillChildrenRunning(activeChildren))
     {
-        std::cout << "Looping: launchedChildren: " << launchedChildren << " activeChildren: " << activeChildren << std::endl;
-        std::cout << "Time: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
-        increment_clock(shared_clock, 10000);
+        //std::cout << "Looping: launchedChildren: " << launchedChildren << " activeChildren: " << activeChildren << std::endl;
+        //std::cout << "Time: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
+        increment_clock(shared_clock, 10000); //increment clock by 10000 ns every loop to keep things moving
         //determine if we should launch a new child. if no active children and no launched children, launch immediately
         if ((activeChildren == 0 && launchedChildren == 0) || ((activeChildren < numSim && launchedChildren < numChildren) && (timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextChildLaunchSec, nextChildLaunchNano))))
         {
-            std::cout << "time passed: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
+            //std::cout << "time passed: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
             //launch a new child
             pid_t child_pid = fork();
             if (child_pid == -1)
@@ -502,7 +511,7 @@ int main(int argc, char* argv[])
                 //parent process
                 launchedChildren++;
                 activeChildren++;
-                std::cout << "Child launched: " << child_pid << std::endl;
+                //std::cout << "Child launched: " << child_pid << std::endl;
 
                 //find an empty spot in the PCB table
                 for (int i = 0; i < MAX_PROCESSES; i++)
@@ -523,7 +532,7 @@ int main(int argc, char* argv[])
                         //add to ready queue
                         readyQueue.push(pcb_table[i]);
 
-                        std::string logMessage = "Child " + std::to_string(child_pid) + " is starting at time " +
+                        std::string logMessage = "Child " + std::to_string(child_pid) + " is launching at time " +
                             std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
                         output_to_log(logMessage);
                         //increment clock
@@ -544,7 +553,7 @@ int main(int argc, char* argv[])
         }
 
         //loop through blocked queue and check if it's time to unblock
-        check_blocked_queue(shared_clock, pcb_table);
+        check_blocked_queue(shared_clock, pcb_table); //this also increments clock 100000ns when it unblocks a process
 
         //print ready queue if not empty
         if(!readyQueue.empty())
@@ -611,12 +620,13 @@ int main(int argc, char* argv[])
                                 pcb_table[i].serviceTimeSeconds++;
                                 pcb_table[i].serviceTimeNano -= BILLION;
                             }
-                            std::string serviceTimeMsg = "Service time of child " + std::to_string(msg.pid) + " is " +
-                                std::to_string(pcb_table[i].serviceTimeSeconds) + " s and " + std::to_string(pcb_table[i].serviceTimeNano) + " ns.";
-                            output_to_log(serviceTimeMsg);
+
                             //recalculate priority
                             long double priority = calculate_priority(pcb_table[i], shared_clock);
-                            std::string priorityMsg = "Priority of child " + std::to_string(msg.pid) + " is " + std::to_string(priority) + ".";
+                            //delete old instance from ready queue
+                            remove_from_ready(msg.pid, shared_clock);
+                            //add to ready queue
+                            readyQueue.push(pcb_table[i]);
 
                             //increment clock
                             increment_clock(shared_clock, 5000);
@@ -670,9 +680,17 @@ int main(int argc, char* argv[])
                         {
                             if (pcb_table[i].pid == msg.pid)
                             {
+                                //update wait time
                                 pcb_table[i].eventWaitSec = shared_clock->seconds;
                                 pcb_table[i].eventWaitNano = shared_clock->nanoseconds + msg.timeSlice;
                                 pcb_table[i].blocked = 1;
+                                //update service time with time used
+                                pcb_table[i].serviceTimeNano += 5000;
+                                if (pcb_table[i].serviceTimeNano >= BILLION)
+                                {
+                                    pcb_table[i].serviceTimeSeconds++;
+                                    pcb_table[i].serviceTimeNano -= BILLION;
+                                }
 
                                 //add to blocked queue
                                 blockedQueue.push(pcb_table[i]);
