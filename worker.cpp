@@ -25,43 +25,34 @@ struct Message
 {
     long msgtype; //type of msg
     pid_t pid; //pid of sender
-    int time; //time slice/used in ns; if negative, worker is terminating
+    long long timeSlice; //time slice/used in ns; if negative, worker is terminating
 };
 
-int simulateWork(int timeSlice)
+long long simulateWork(long long timeSlice)
 {
     //simulate work
     //10% chance of terminating
-    int terminateChance = rand() % 100;
+    long long terminateChance = rand() % 100;
+    long long p = rand() % 100; //p in range [0, 99]
     if (terminateChance < 10)
     {
-        int usedTime = rand() % (timeSlice + 1); //use entire time slice
+        long long usedTime = rand() % (timeSlice + 1); //use entire time slice
         return -usedTime; //terminate
     }
-    //90% chance of working
-    else
+    //90% chance of working/blocking
+    else if (p > 50) //work done taking part of time and requesting I/O
     {
-        int blockChance = rand() % 100;
-        if (blockChance < 50) //50% chance of blocking
-        {
-            int r = rand() % 6; //r in range [0, 5]
-            int s = rand() % 1001; //s in range [0, 1000]
-            int blockTime = r * BILLION + s; //block time in ns
+        //50% chance of blocking
+        long long r = rand() % 6; //r in range [0, 5]
+        long long s = rand() % 1001; //s in range [0, 1000]
+        long long blockTime = r * BILLION + s; //run time before block in ns
 
-            return blockTime;
-        }
-        else //50% chance of working
-        {
-            int p = rand() % 100; //p in range [1, 99]
-            if (p < timeSlice)
-            {
-                return p;
-            }
-            else
-            {
-                return timeSlice;
-            }
-        }
+
+        return blockTime;
+    }
+    else if (p <= 50)
+    {
+        return timeSlice; //work done taking entire time
     }
     //if no work done
     return -1;
@@ -75,14 +66,6 @@ int main()
     if (shmid == -1)
     {
         std::cerr << "Worker " << getpid() <<": Error: Shared memory get failed" << std::endl;
-        return 1;
-    }
-
-    //attach shared mem
-    Clock *shared_clock = static_cast<Clock*>(shmat(shmid, nullptr, 0));
-    if (shared_clock == (void*)-1)
-    {
-        std::cerr << "Worker: Error: shmat" << std::endl;
         return 1;
     }
 
@@ -108,16 +91,16 @@ int main()
             return 1;
         }
         //get timeslice from oss msg
-        int timeSlice = msg.time;
+        long long timeSlice = msg.timeSlice;
 
         std::cout << "Worker " << getpid() << ": Received time slice " << timeSlice << " from OSS" << std::endl;
         //simulate work
-        int workDone = simulateWork(timeSlice);
+        long long workDone = simulateWork(timeSlice);
 
         Message response;
         response.msgtype = getppid();
         response.pid = getpid();
-        response.time = workDone;
+        response.timeSlice = workDone;
 
         //send message to oss
         if(msgsnd(msgid, &response, sizeof(Message) - sizeof(long), 0) == -1)
@@ -126,13 +109,6 @@ int main()
             return 1;
         }
 
-    }
-
-    //detach shared mem
-    if(shmdt(shared_clock) == -1)
-    {
-        std::cerr << "Worker " << getpid() << ": Error: shmdt failed" << std::endl;
-        return 1;
     }
 
     return 0;

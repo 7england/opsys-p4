@@ -49,7 +49,7 @@ struct Message
 {
     long msgtype; //type of msg
     pid_t pid; //pid of sender
-    int timeSlice; //time slice for process
+    long long timeSlice; //time slice for process
 };
 
 void signal_handler(int sig)
@@ -197,15 +197,20 @@ void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
     //find the highest priority process
     int highestPriority = -1;
     int highestPriorityIndex = -1;
+
+    //iterate through PCB table
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
+        //check if process is occupied and not blocked
         if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 0)
         {
+            //calculate priority
             int priority = pcb_table[i].serviceTimeSeconds * BILLION + pcb_table[i].serviceTimeNano;
             if (priority > highestPriority)
             {
                 highestPriority = priority;
                 highestPriorityIndex = i;
+                std::cout << "Highest priority: " << highestPriority << std::endl;
             }
         }
     }
@@ -329,8 +334,9 @@ int main(int argc, char* argv[])
     {
         std::cout << "Looping: launchedChildren: " << launchedChildren << " activeChildren: " << activeChildren << std::endl;
         std::cout << "Time: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
+        increment_clock(shared_clock, 1000);
         //determine if we should launch a new child. if no active children, launch immediately.
-        if (activeChildren == 0 || timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextChildLaunchSec, nextChildLaunchNano))
+        if ((activeChildren == 0 && launchedChildren == 0) || timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextChildLaunchSec, nextChildLaunchNano))
         {
             //launch a new child
             pid_t child_pid = fork();
@@ -385,7 +391,6 @@ int main(int argc, char* argv[])
                     nextChildLaunchSec++;
                     nextChildLaunchNano -= BILLION;
                 }
-                std::cout << "Next child launch time: " << nextChildLaunchSec << "." << nextChildLaunchNano << std::endl;
             }
         }
 
@@ -397,26 +402,30 @@ int main(int argc, char* argv[])
         Message msg;
         while(msgrcv(msgid, &msg, sizeof(msg) - sizeof(long), getpid(), 0) != -1)
         {
-            std::cout << "Received message from child: " << msg.pid << std::endl;
-            //find the child in the PCB table
-            for (int i = 0; i < MAX_PROCESSES; i++)
+            std::string logMessage = "Received message from child " + std::to_string(msg.pid) + "." +
+                " Time slice: " + std::to_string(msg.timeSlice) + " at time " + std::to_string(shared_clock->seconds) +
+                "." + std::to_string(shared_clock->nanoseconds) + ".";
+            output_to_log(logMessage);
+
+            if (msg.timeSlice < 0)
             {
-                if (pcb_table[i].pid == msg.pid)
+                //child is done
+                std::string logMessage = "Child " + std::to_string(msg.pid) + " is terminating at time " +
+                    std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                output_to_log(logMessage);
+
+                activeChildren--;
+                remove_from_PCB(msg.pid);
+                increment_clock(shared_clock, 1000);
+                break;
+            }
+            else if (msg.timeSlice > 0)
+            {
+                //check if child is blocked if not equal to 5000 ns
+                for (int i = 0; i < MAX_PROCESSES; i++)
                 {
-                    if (msg.timeSlice < 0)
+                    if (pcb_table[i].pid == msg.pid)
                     {
-                        //calculate time of worker
-                        int timeTaken = 0 - msg.timeSlice;
-                        //terminate process
-                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is terminating at time " +
-                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
-                        remove_from_PCB(msg.pid);
-                        increment_clock(shared_clock, timeTaken);
-                        activeChildren--;
-                    }
-                    else if (msg.timeSlice >= 0 && msg.timeSlice < 5000)
-                    {
-                        //block process
                         pcb_table[i].blocked = 1;
                         pcb_table[i].eventWaitSec = shared_clock->seconds;
                         pcb_table[i].eventWaitNano = shared_clock->nanoseconds + msg.timeSlice;
@@ -425,24 +434,10 @@ int main(int argc, char* argv[])
                             pcb_table[i].eventWaitSec++;
                             pcb_table[i].eventWaitNano -= BILLION;
                         }
-                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is blocking at time " +
-                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                        break;
                     }
-                    else if (msg.timeSlice == 5000)
-                    {
-                        //calculate time of worker
-                        int timeTaken = msg.timeSlice;
-                        //increment clock
-                        increment_clock(shared_clock, timeTaken);
-                        //update PCB table
-                        pcb_table[i].serviceTimeSeconds += timeTaken;
-                        std::string logMessage = "Child " + std::to_string(msg.pid) + " is running at time " +
-                            std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
-                    }
-                    break;
                 }
             }
-
         }
     }
 
