@@ -46,12 +46,13 @@ long long simulateWork(long long timeSlice)
         long long r = rand() % 6; //r in range [0, 5]
         long long s = rand() % 1001; //s in range [0, 1000]
         long long blockTime = r * BILLION + s; //run time before block in ns
-
+        std::cout << "Worker: " << getpid() << ": Blocking for " << blockTime << " ns" << std::endl;
 
         return blockTime;
     }
     else if (p <= 50)
     {
+        std::cout << "Worker: " << getpid() << ": used entire time slice" << std::endl;
         return timeSlice; //work done taking entire time
     }
     //if no work done
