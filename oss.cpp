@@ -428,6 +428,7 @@ int main(int argc, char* argv[])
 
     int launchedChildren = 0;
     int activeChildren = 0;
+    int blockedCounter = 0;
 
     long long nextChildLaunchSec = 0;
     long long nextChildLaunchNano = 0;
@@ -570,6 +571,10 @@ int main(int argc, char* argv[])
                 }
                 else if (msg.timeSlice > 0 && msg.timeSlice != 5000)
                 {
+                    blockedCounter++;
+                    std::string blockedCounterMsg = "Blocked counter: " + std::to_string(blockedCounter);
+                    output_to_log(blockedCounterMsg);
+
                     std::string logMessage = "Child " + std::to_string(msg.pid) + " is blocking for " +
                         std::to_string(msg.timeSlice) + " ns at time " + std::to_string(shared_clock->seconds) +
                         "." + std::to_string(shared_clock->nanoseconds) + ".";
