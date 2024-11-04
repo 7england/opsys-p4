@@ -46,13 +46,11 @@ long long simulateWork(long long timeSlice)
         long long r = rand() % 6; //r in range [0, 5]
         long long s = rand() % 1001; //s in range [0, 1000]
         long long blockTime = r * BILLION + s; //run time before block in ns
-        std::cout << "Worker: " << getpid() << ": Blocking for " << blockTime << " ns" << std::endl;
 
         return blockTime;
     }
     else if (p <= 50)
     {
-        std::cout << "Worker: " << getpid() << ": used entire time slice" << std::endl;
         return timeSlice; //work done taking entire time
     }
     //if no work done
@@ -61,7 +59,6 @@ long long simulateWork(long long timeSlice)
 
 int main()
 {
-    std::cout << "Worker " << getpid() << ": Starting" << std::endl;
     //https://stackoverflow.com/questions/55833470/accessing-key-t-generated-by-ipc-private
     int shmid = shmget(SH_KEY, sizeof(Clock), PERMS); //<-----
     if (shmid == -1)
@@ -82,7 +79,6 @@ int main()
 
     while(true)
     {
-
         //get message from oss
         Message msg;
 
@@ -94,7 +90,6 @@ int main()
         //get timeslice from oss msg
         long long timeSlice = msg.timeSlice;
 
-        std::cout << "Worker " << getpid() << ": Received time slice " << timeSlice << " from OSS" << std::endl;
         //simulate work
         long long workDone = simulateWork(timeSlice);
 
