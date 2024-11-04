@@ -194,6 +194,7 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
 
 void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
 {
+    std::cout << "Scheduling process..." << std::endl;
     //find the highest priority process
     int highestPriority = -1;
     int highestPriorityIndex = -1;
@@ -201,17 +202,28 @@ void schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
     //iterate through PCB table
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
+        std::cout << "Made it in scheduling process loop... " << std::endl;
         //check if process is occupied and not blocked
         if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 0)
         {
             //calculate priority
+            std::cout << "PID: " << pcb_table[i].pid << std::endl;
             int priority = pcb_table[i].serviceTimeSeconds * BILLION + pcb_table[i].serviceTimeNano;
             if (priority > highestPriority)
             {
                 highestPriority = priority;
                 highestPriorityIndex = i;
                 std::cout << "Highest priority: " << highestPriority << std::endl;
+                break;
             }
+            else
+            {
+                //do nothing
+            }
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -335,7 +347,7 @@ int main(int argc, char* argv[])
         std::cout << "Looping: launchedChildren: " << launchedChildren << " activeChildren: " << activeChildren << std::endl;
         std::cout << "Time: " << shared_clock->seconds << "." << shared_clock->nanoseconds << std::endl;
         increment_clock(shared_clock, 1000);
-        //determine if we should launch a new child. if no active children, launch immediately.
+        //determine if we should launch a new child. if no active children and no launched children, launch immediately
         if ((activeChildren == 0 && launchedChildren == 0) || timePassed(shared_clock->seconds, shared_clock->nanoseconds, nextChildLaunchSec, nextChildLaunchNano))
         {
             //launch a new child
@@ -394,21 +406,25 @@ int main(int argc, char* argv[])
             }
         }
 
-
-        //schedule process
         //loop through pcb checking the blocked processes. if blocked, check if it is time to unblock
         for (int i = 0; i < MAX_PROCESSES; i++)
         {
             if (pcb_table[i].occupied == 1 && pcb_table[i].blocked == 1)
             {
+                //check if it is time to unblock
                 if (timePassed(shared_clock->seconds, shared_clock->nanoseconds, pcb_table[i].eventWaitSec, pcb_table[i].eventWaitNano))
                 {
+                    std::string logMessage = "Child " + std::to_string(pcb_table[i].pid) + " is unblocked at time " +
+                        std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                    output_to_log(logMessage);
                     pcb_table[i].blocked = 0;
                     pcb_table[i].eventWaitSec = 0;
                     pcb_table[i].eventWaitNano = 0;
                 }
             }
         }
+
+        //calculate priorities of ready processes and schedule a process by sending it a message
         schedule_process(shared_clock, msgid, pcb_table);
 
         //receive message back and update appropriate structures
