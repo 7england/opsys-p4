@@ -62,7 +62,7 @@ long long simulateWork(long long timeSlice)
         int p = rand() % 100 + 1; //p in range [1, 100]
         //return 1-100% of time slice
         long long workTime = timeSlice * (p / 100.0); //work time in ns
-        std::cout << "Worker " << getpid() << ": Work done: " << workTime << " ns" << std::endl;
+        //std::cout << "Worker " << getpid() << ": Work done: " << workTime << " ns" << std::endl;
 
         return workTime;
     }
@@ -129,6 +129,12 @@ int main()
         {
             std::cerr << "Worker " << getpid() << ": Error: msgsnd failed" << std::endl;
             return 1;
+        }
+
+        if (workDone < 0)
+        {
+            //std::cout << "Worker " << getpid() << ": Terminating" << std::endl;
+            break;
         }
 
     }
