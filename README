@@ -1,0 +1,32 @@
+***********************************************************************************************************
+README
+Author: S. England
+Date: 11/4/2024
+***********************************************************************************************************
+project invocation: ./oss 
+  -n [number of total processes to generate]
+  -s [number of simultaneous processes in system at any time]
+  -t [time delay between launches]
+  -h [help menu]
+
+OSS: dispatches workers using priority scheduling algorithm based on total time in the system
+and time in service.The PCB table and priority queue are printed to the screen in nice looking tables
+at periodic intervals. OSS increments the clock based on what it does in a loop. For instance,
+removing a process from the blocked queue takes more time than other actions as in a real OS.
+
+Worker: workers generate a random number, then use that number to decide on one of 3 actions:
+  1. terminate
+  2. request IO and block
+  3. use time block and continue trying to run
+The workers send this information back to oss, which uses it to do its work like incrementing the
+clock. Workers no longer need to use shared memory for the clock. They simply receive the message,
+generate the random number, and come up with some other random number to block for if necessary.
+
+Issues: The message queue issues were debugged, related to types mis-matched in the relative structs
+in OSS and worker files. Additionally, workers were deleting the shared memory instead of detaching.
+When working on the project, there was a divide by 0 error with priorities. The error was eliminated.
+Additional issues were found in generating random numbers using time and pid, which don't always generate
+random numbers. These have mostly been mitigated but are somewhat unavoidable with library functions.
+
+This project was tested with invocation -n 10 -s 5 -t 10000 with seemingly successful output
+to log and screen. 
