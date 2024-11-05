@@ -48,8 +48,8 @@ long long simulateWork(long long timeSlice)
     {
         //blocked
         //50% chance of blocking
-        long long r = rand() % 6; //r in range [0, 5]
-        long long s = rand() % 1001; //s in range [0, 1000]
+        long long r = rand() % 6; //r in range [1, 5]
+        long long s = rand() % 1001; //s in range [1, 1000]
         long long blockTime = r * BILLION + s; //run time before block in ns
         blocked = true;
 
