@@ -724,8 +724,20 @@ int main(int argc, char* argv[])
         //check to see if .5 s passed
         if (shared_clock->seconds > lastPrintedSec || (shared_clock->seconds >= lastPrintedSec && shared_clock->nanoseconds >= lastPrintedNano + 500000000))
         {
+            //print active children
+            std::string msg = "\nActive children: " + std::to_string(activeChildren);
+            //print launched children
+            msg += "\nLaunched children: " + std::to_string(launchedChildren);
+            //print blocked queue size
+            msg += "\nBlocked queue size: " + std::to_string(blockedQueue.size());
+            //print throughput
+            msg += "\nThroughput: " + std::to_string(launchedChildren) + " processes completed in " +
+                std::to_string(shared_clock->seconds) + " seconds and " + std::to_string(shared_clock->nanoseconds) + " nanoseconds.";
+            //print msg
+            output_to_log(msg);
             //print process table
             print_process_table(pcb_table, shared_clock);
+            //print_output(shared_clock, activeChildren, launchedChildren);
             lastPrintedSec = shared_clock->seconds;
             lastPrintedNano = shared_clock->nanoseconds;
         }
