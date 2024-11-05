@@ -56,6 +56,7 @@ struct Message
     long msgtype; //type of msg
     pid_t pid; //pid of sender
     long long timeSlice; //time slice for process
+    int blocked; //is process blocked?
 };
 
 void signal_handler(int sig)
@@ -127,6 +128,7 @@ void output_to_log(const std::string &message)
     }
 
     logFileStream << message << std::endl; //write message to file
+    std::cout << message << std::endl; //write message to screen
     totalLines++; //increment line count
 
     logFileStream.close(); //close file
@@ -151,12 +153,11 @@ void print_process_table(PCB pcb_table[], Clock* shared_clock)
     logOutput += "------------------------------------------------------------------------------------------------------------------------------------\n";
 
     output_to_log(logOutput);
-    std::cout << logOutput << std::endl;
 }
 
 void remove_from_PCB(pid_t dead_pid)
 {
-    std::cout << "PID to delete: " << dead_pid << std::endl;
+    //std::cout << "PID to delete: " << dead_pid << std::endl;
     for (int i = 0; i < MAX_PROCESSES; i++)
     {
         if (pcb_table[i].pid == dead_pid)
@@ -209,27 +210,33 @@ bool timePassed(long long sec1, long long nano1, long long sec2, long long nano2
 
 long double calculate_priority(PCB pcb, Clock* shared_clock)
 {
-    //calculate total system time
-    long double totalSystemTime = shared_clock->seconds * BILLION + shared_clock->nanoseconds;
-    if (totalSystemTime == 0)
+    //calculate total system time in seconds and nanoseconds
+    long double totalSystemSeconds = shared_clock->seconds;
+    long double totalSystemNano = shared_clock->nanoseconds;
+
+    if (totalSystemSeconds == 0 && totalSystemNano == 0)
     {
         return 0;
     }
 
-    //calculate total service time
-    long double totalServiceTime = pcb.serviceTimeSeconds * BILLION + pcb.serviceTimeNano;
-    std::string serviceTimeMsg = "Service time of child " + std::to_string(pcb.pid) + " is " +
-        std::to_string(pcb.serviceTimeSeconds) + " s and " + std::to_string(pcb.serviceTimeNano) + " ns.";
-    output_to_log(serviceTimeMsg);
-    if (totalServiceTime == 0)
+    //calculate total service time in seconds and nanoseconds
+    long double totalServiceSeconds = pcb.serviceTimeSeconds;
+    long double totalServiceNano = pcb.serviceTimeNano;
+
+    if (totalServiceSeconds == 0 && totalServiceNano == 0)
     {
         return 0;
     }
 
-    //calculate priority
-    long double priority = static_cast<long double>(totalServiceTime) / totalSystemTime;
+    //convert nanoseconds to seconds
+    long double totalSystemTime = totalSystemSeconds + (totalSystemNano / BILLION);
+    long double totalServiceTime = totalServiceSeconds + (totalServiceNano / BILLION);
+
+    //calculate priority as the ratio of total service time to total system time
+    long double priority = totalServiceTime / totalSystemTime;
     return priority;
 }
+
 
 void print_ready_queue(Clock* shared_clock)
 {
@@ -249,7 +256,7 @@ void print_ready_queue(Clock* shared_clock)
     logOutput += "-----------------\n";
     output_to_log(logOutput);
 
-    std::cout << logOutput << std::endl;
+    //std::cout << logOutput << std::endl;
 }
 
 bool schedule_process(Clock *shared_clock, int msgid, PCB pcb_table[])
@@ -603,10 +610,10 @@ int main(int argc, char* argv[])
                 output_to_log(logMessage);
 
                 //check if msg timeSlice == 5000 ns, if so, worker is not blocked; otherwise worker is blocked for timeSlice in ns
-                if (msg.timeSlice == 5000)
+                if (msg.blocked == 0)
                 {
-                    std::string logMessage = "Child " + std::to_string(msg.pid) + " used entire timeslice at time " +
-                        std::to_string(shared_clock->seconds) + "." + std::to_string(shared_clock->nanoseconds) + ".";
+                    //use timeslice to calculate time spent as percentage of 5000 where (1/p) * 5000 = time spent
+                    std::string logMessage = "Child " + std::to_string(msg.pid) + " is not blocked and ran for " + std::to_string(msg.timeSlice) + " ns.";
                     output_to_log(logMessage);
                     //worker is not blocked
                     for (int i = 0; i < MAX_PROCESSES; i++)
@@ -614,7 +621,8 @@ int main(int argc, char* argv[])
                         if (pcb_table[i].pid == msg.pid)
                         {
                             //add service time
-                            pcb_table[i].serviceTimeNano += 5000;
+                            pcb_table[i].serviceTimeNano += msg.timeSlice;
+                            std::cout << "Service time: " << pcb_table[i].serviceTimeNano << std::endl;
                             if (pcb_table[i].serviceTimeNano >= BILLION)
                             {
                                 pcb_table[i].serviceTimeSeconds++;
@@ -624,6 +632,8 @@ int main(int argc, char* argv[])
                             //recalculate priority
                             long double priority = calculate_priority(pcb_table[i], shared_clock);
                             //delete old instance from ready queue
+                            std::string clarify = "Child " + std::to_string(msg.pid) + " duplicate in ready queue to be removed.";
+                            output_to_log(clarify);
                             remove_from_ready(msg.pid, shared_clock);
                             //add to ready queue
                             readyQueue.push(pcb_table[i]);
@@ -634,7 +644,7 @@ int main(int argc, char* argv[])
                         }
                     }
                 }
-                else if (msg.timeSlice > 0 && msg.timeSlice != 5000)
+                else if (msg.blocked == 1 && msg.timeSlice > 0)
                 {
                     blockedCounter++;
                     std::string blockedCounterMsg = "Blocked counter: " + std::to_string(blockedCounter);

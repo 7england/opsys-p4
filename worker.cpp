@@ -15,6 +15,8 @@ const int MSG_KEY = 49174;
 const int PERMS = 0644;
 const int BILLION = 1000000000;
 
+bool blocked = false;
+
 struct Clock
 {
     int seconds;
@@ -26,6 +28,7 @@ struct Message
     long msgtype; //type of msg
     pid_t pid; //pid of sender
     long long timeSlice; //time slice/used in ns; if negative, worker is terminating
+    int blocked; //if worker is blocked
 };
 
 long long simulateWork(long long timeSlice)
@@ -33,25 +36,35 @@ long long simulateWork(long long timeSlice)
     //simulate work
     //10% chance of terminating
     long long terminateChance = rand() % 100;
-    long long p = rand() % 100; //p in range [0, 99]
+    long long chance = rand() % 100; //chance in range 1-100%
+
     if (terminateChance < 10)
     {
         long long usedTime = rand() % (timeSlice + 1); //use entire time slice
         return -usedTime; //terminate
     }
     //90% chance of working/blocking
-    else if (p > 50) //work done taking part of time and requesting I/O
+    else if (chance > 50) //work done taking part of time and requesting I/O
     {
+        //blocked
         //50% chance of blocking
         long long r = rand() % 6; //r in range [0, 5]
         long long s = rand() % 1001; //s in range [0, 1000]
         long long blockTime = r * BILLION + s; //run time before block in ns
+        blocked = true;
 
         return blockTime;
     }
-    else if (p <= 50)
+    else if (chance <= 50)
     {
-        return timeSlice; //work done taking entire time
+        //not blocked
+        //calculate p time taken, where p is a random number between [1,99]
+        int p = rand() % 100 + 1; //p in range [1, 100]
+        //return 1-100% of time slice
+        long long workTime = timeSlice * (p / 100.0); //work time in ns
+        std::cout << "Worker " << getpid() << ": Work done: " << workTime << " ns" << std::endl;
+
+        return workTime;
     }
     //if no work done
     return -1;
@@ -97,6 +110,19 @@ int main()
         response.msgtype = getppid();
         response.pid = getpid();
         response.timeSlice = workDone;
+        if(!blocked)
+        {
+            response.blocked = 0;
+        }
+        else if (blocked)
+        {
+            response.blocked = 1;
+            blocked = false;
+        }
+        else
+        {
+            response.blocked = 0;
+        }
 
         //send message to oss
         if(msgsnd(msgid, &response, sizeof(Message) - sizeof(long), 0) == -1)
