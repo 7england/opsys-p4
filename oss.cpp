@@ -387,6 +387,7 @@ int main(int argc, char* argv[])
 {
     //set up alarm
     signal(SIGALRM, signal_handler);
+    signal(SIGINT, signal_handler);
     alarm(60);
 
     //initialize variables for getopt
