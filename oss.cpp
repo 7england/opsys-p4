@@ -731,8 +731,12 @@ int main(int argc, char* argv[])
             //print blocked queue size
             msg += "\nBlocked queue size: " + std::to_string(blockedQueue.size());
             //print throughput
-            msg += "\nThroughput: " + std::to_string(launchedChildren) + " processes completed in " +
+            msg += "\nThroughput: " + std::to_string(launchedChildren) + " processes running in " +
                 std::to_string(shared_clock->seconds) + " seconds and " + std::to_string(shared_clock->nanoseconds) + " nanoseconds.";
+            //print time since last print
+            msg += "\nTime since last print: " + std::to_string(shared_clock->seconds - lastPrintedSec) + " seconds and " +
+                std::to_string(shared_clock->nanoseconds - lastPrintedNano) + " nanoseconds.";
+
             //print msg
             output_to_log(msg);
             //print process table
